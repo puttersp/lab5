@@ -21,7 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "stdio.h"
+#include "string.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,6 +43,19 @@
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+uint8_t rx_buf[1];
+uint8_t tx_buf[100];
+float led_spd = 50;
+uint8_t state = 0;
+uint8_t action = 1;
+uint8_t led_off = 0;
+uint8_t button_state = 0;
+uint8_t ledfreq = 10;
+uint8_t startup = 0;
+uint16_t led_buf[2];
+uint8_t str[110];
+uint8_t str2[110];
+static uint32_t timestamp2 = 0;
 
 /* USER CODE END PV */
 
@@ -50,7 +64,11 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+void uart_poll();
+void led();
+void uart_it_conf();
+void fsm();
+void clrtx();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -88,13 +106,23 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  sprintf(str, "\n\n\n\n\n\n\n\n\n\n\rAvailable Options\r\na : Speed Up +1Hz\r\ns : Speed Down -1Hz\r\nd : On/Off\r\nx : Back\r\nLED Frequency : %d", ledfreq);
+//  uint8_t text[] = "\r\nHELLO FIBO\r\n";
+//  HAL_UART_Transmit(&huart2, text, 13, 10);
+  //uart_it_conf();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  //uart_poll();
+
+	  HAL_UART_Receive_IT(&huart2, rx_buf, 1);
+	  led();
+	  fsm();
+
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -164,7 +192,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
+  huart2.Init.BaudRate = 57600;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -215,7 +243,115 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){action = 0;}
+void fsm(){
+	switch(state){
+	case 0:
+		//sprintf base menu
+		if(startup == 0){
+			HAL_UART_Transmit_IT(&huart2,"\n\n\n\n\n\n\n\n\n\n\rAvailable Options\r\n0 : LED Control\r\n1 : Button Status\r\n", 66);
+			startup = 1;
+		}
+		if(action == 0 && rx_buf[0] == '0'){
+			action = 1;
+			HAL_UART_Transmit_IT(&huart2,"\n\n\n\n\n\n\n\n\n\n\rAvailable Options\r\na : Speed Up +1Hz\r\ns : Speed Down -1Hz\r\nd : On/Off\r\nx : Back\r\n", 92);
+			state = 1;
+		}
+		else if(action == 0 && rx_buf[0] == '1'){
+			action = 1;
+			HAL_UART_Transmit_IT(&huart2,"\n\n\n\n\n\n\n\n\n\n\rAvailable Options\r\nx : Back\r\n", 40);
+			state = 2;
+		}
+		else if(action == 0 && rx_buf[0] != '1' && rx_buf[0] != '0'){
+			action = 1;
+			//HAL_UART_Transmit_IT(&huart2,"\n\n\n\n\n\n\n\n\n\n\rAvailable Options\r\n0 : LED Control\r\n1 : Button Status\r\n", 66);
+			HAL_UART_Transmit_IT(&huart2,"Wrong Button Pressed!\r\n", 23);
+		}
+		break;
+	case 1:
+		//led control menu
+		if(action == 0 && rx_buf[0] == 'x'){
+			action = 1;
+			state = 0;
+			HAL_UART_Transmit_IT(&huart2,"\n\n\n\n\n\n\n\n\n\n\rAvailable Options\r\n0 : LED Control\r\n1 : Button Status\r\n", 66);
+		}
+		else if(action == 0 && rx_buf[0] == 'a'){
+			action = 1;
+			led_spd = (500*led_spd)/(500+led_spd);
+			ledfreq = ceil(500/led_spd);
+			sprintf(str, "\n\n\n\n\n\n\n\n\n\n\rAvailable Options\r\na : Speed Up +1Hz\r\ns : Speed Down -1Hz\r\nd : On/Off\r\nx : Back\r\nLED Frequency : %d", ledfreq);
+			//HAL_UART_Transmit_IT(&huart2,"\n\n\n\n\n\n\n\n\n\n\rAvailable Options\r\na : Speed Up +1Hz\r\ns : Speed Down -1Hz\r\nd : On/Off\r\nx : Back\r\nLED Frequency : ", 108);
+			HAL_UART_Transmit_IT(&huart2, str, 110);
 
+		}
+		else if(action == 0 && rx_buf[0] == 's'){
+			action = 1;
+			led_spd = (500*led_spd)/(500-led_spd);
+			ledfreq = ceil(500/led_spd);
+			sprintf(str, "\n\n\n\n\n\n\n\n\n\n\rAvailable Options\r\na : Speed Up +1Hz\r\ns : Speed Down -1Hz\r\nd : On/Off\r\nx : Back\r\nLED Frequency : %d", ledfreq);
+			//HAL_UART_Transmit_IT(&huart2,"\n\n\n\n\n\n\n\n\n\n\rAvailable Options\r\na : Speed Up +1Hz\r\ns : Speed Down -1Hz\r\nd : On/Off\r\nx : Back\r\nLED Frequency : ", 108);
+			//HAL_UART_Transmit_IT(&huart2, str, 2);
+			HAL_UART_Transmit_IT(&huart2, str, 110);
+		}
+		else if(action == 0 && rx_buf[0] == 'd'){
+			action = 1;
+
+			if(led_off == 0){
+				led_off = 1;
+				HAL_UART_Transmit_IT(&huart2,"\n\n\n\n\n\n\n\n\n\n\rAvailable Options\r\na : Speed Up +1Hz\r\ns : Speed Down -1Hz\r\nd : On/Off\r\nx : Back\r\nLED Turned Off!\r", 109);
+			}
+			else if(led_off == 1){
+				led_off = 0;
+				HAL_UART_Transmit_IT(&huart2,"\n\n\n\n\n\n\n\n\n\n\rAvailable Options\r\na : Speed Up +1Hz\r\ns : Speed Down -1Hz\r\nd : On/Off\r\nx : Back\r\nLED Turned On!\r", 108);
+			}
+		}
+		else if(action == 0 && rx_buf[0] != 'x' && rx_buf[0] != 'a' && rx_buf[0] != 's' && rx_buf[0] != 'd'){
+			//sprintf no button
+			action = 1;
+			HAL_UART_Transmit_IT(&huart2,"Wrong Button Pressed!\r\n", 23);
+		}
+		break;
+	case 2:
+		//read button state
+		//sprint show button menu
+		button_state = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
+		if(HAL_GetTick()>=timestamp2){
+			timestamp2 = HAL_GetTick()+250;
+			if(button_state == 0){
+				HAL_UART_Transmit_IT(&huart2,"\n\n\n\n\n\n\n\n\n\n\rButton Status : Pressed\r\n\nAvailable Options\r\nx : Back\r\n\r", 67);
+			}
+			else if(button_state == 1){
+				HAL_UART_Transmit_IT(&huart2,"\n\n\n\n\n\n\n\n\n\n\rButton Status : Not Pressed\r\n\nAvailable Options\r\nx : Back\r\n\r", 71);
+			}
+		}
+
+		if(action == 0 && rx_buf[0] == 'x'){
+			action = 1;
+			state = 0;
+			HAL_UART_Transmit_IT(&huart2,"\n\n\n\n\n\n\n\n\n\n\rAvailable Options\r\n0 : LED Control\r\n1 : Button Status\r\n", 66);
+		}
+		else if(action == 0 && rx_buf[0] != 'x'){
+			action = 1;
+			HAL_UART_Transmit_IT(&huart2,"Wrong Button Pressed!\r\n", 23);
+		}
+		break;
+	}
+}
+
+void led(){
+	static uint32_t timestamp = 0;
+	if(led_spd > 60000){
+		led_spd = 1000;
+	}
+	if(HAL_GetTick()>=timestamp && led_off == 0){
+		timestamp = HAL_GetTick()+led_spd;
+		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+	}
+	if(led_off == 1){
+		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
+
+	}
+}
 /* USER CODE END 4 */
 
 /**
